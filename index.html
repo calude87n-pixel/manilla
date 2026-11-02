@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manilla de cuidado</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --tx:#1c2430; --mut:#6b7684; --ac:#d6336c; --ok:#2f9e44; --bd:#e3e6ea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161c; --card:#1b212a; --tx:#e8ecf1; --mut:#97a2b0; --bd:#2b3340; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--tx); }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:8px 0 16px; }
+  h2 { font-size:1.05rem; margin:0 0 12px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:.85rem; color:var(--mut); margin:10px 0 4px; }
+  input, textarea { width:100%; padding:10px; border:1px solid var(--bd); border-radius:8px; background:transparent; color:var(--tx); font-size:1rem; }
+  button { padding:10px 16px; border:0; border-radius:8px; background:var(--ac); color:#fff; font-size:1rem; cursor:pointer; margin-top:14px; }
+  button.sec { background:transparent; color:var(--mut); border:1px solid var(--bd); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .kv { background:var(--bg); border-radius:8px; padding:10px; }
+  .kv b { display:block; font-size:1.2rem; }
+  .kv span { font-size:.8rem; color:var(--mut); }
+  .msg { margin-top:10px; font-size:.9rem; min-height:1.2em; }
+  .err { color:#e03131; } .okc { color:var(--ok); }
+  .day { font-weight:600; margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--bd); }
+  .ev { padding:8px 0; border-bottom:1px dashed var(--bd); font-size:.92rem; }
+  .ev .t { font-weight:600; } .ev .h { color:var(--mut); margin-right:8px; }
+  .ev .d { color:var(--mut); font-size:.85rem; margin-top:2px; }
+  .hide { display:none; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Manilla de cuidado</h1>
+
+  <section id="login" class="card">
+    <h2>Iniciar sesión</h2>
+    <label for="email">Correo</label>
+    <input id="email" type="email" autocomplete="username">
+    <label for="pass">Contraseña</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <button id="btnLogin">Entrar</button>
+    <div id="loginMsg" class="msg err"></div>
+  </section>
+
+  <div id="app" class="hide">
+    <div class="row" style="margin-bottom:12px">
+      <span id="quien" style="color:var(--mut);font-size:.9rem"></span>
+      <button id="btnOut" class="sec" style="margin:0">Salir</button>
+    </div>
+
+    <section class="card">
+      <h2>Estado actual</h2>
+      <div id="estado" class="grid"><div class="kv"><span>Sin datos todavía</span></div></div>
+    </section>
+
+    <section class="card">
+      <h2>Configuración</h2>
+      <div class="grid">
+        <div><label for="caidaLeveG">Caída leve (g)</label><input id="caidaLeveG" type="number" step="0.1"></div>
+        <div><label for="caidaBruscaG">Caída brusca (g)</label><input id="caidaBruscaG" type="number" step="0.1"></div>
+        <div><label for="bpmMin">BPM mínimo</label><input id="bpmMin" type="number"></div>
+        <div><label for="bpmMax">BPM máximo</label><input id="bpmMax" type="number"></div>
+        <div><label for="spo2Min">SpO₂ mínimo (%)</label><input id="spo2Min" type="number"></div>
+      </div>
+      <label for="familiares">Familiares (formato Nombre:chat_id,Nombre:chat_id)</label>
+      <textarea id="familiares" rows="2" placeholder="Mama:123456789,Papa:987654321"></textarea>
+      <button id="btnGuardar">Guardar configuración</button>
+      <div id="cfgMsg" class="msg"></div>
+    </section>
+
+    <section class="card">
+      <h2>Registro por fechas</h2>
+      <div id="eventos"><span style="color:var(--mut)">Sin eventos todavía</span></div>
+    </section>
+  </div>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getDatabase, ref, onValue, set, query, limitToLast }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD6kCRiBeOwEHIKAl7sxKUG9ahydYjQoS8",
+  authDomain: "cardiaco-f0a2d.firebaseapp.com",
+  databaseURL: "https://cardiaco-f0a2d-default-rtdb.firebaseio.com",
+  projectId: "cardiaco-f0a2d",
+  storageBucket: "cardiaco-f0a2d.firebasestorage.app",
+  messagingSenderId: "457037175464",
+  appId: "1:457037175464:web:ad328b7d45e11977b1009d"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+const $ = id => document.getElementById(id);
+const CAMPOS = ["caidaLeveG","caidaBruscaG","bpmMin","bpmMax","spo2Min"];
+let unsubs = [];
+
+$("btnLogin").onclick = async () => {
+  $("loginMsg").textContent = "";
+  try { await signInWithEmailAndPassword(auth, $("email").value.trim(), $("pass").value); }
+  catch (e) { $("loginMsg").textContent = "No se pudo entrar. Revisa correo y contraseña."; }
+};
+$("pass").addEventListener("keydown", e => { if (e.key === "Enter") $("btnLogin").click(); });
+$("btnOut").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, user => {
+  unsubs.forEach(u => u()); unsubs = [];
+  if (!user) { $("login").classList.remove("hide"); $("app").classList.add("hide"); return; }
+  $("login").classList.add("hide"); $("app").classList.remove("hide");
+  $("quien").textContent = user.email;
+  suscribir();
+});
+
+function suscribir() {
+  unsubs.push(onValue(ref(db, "estado"), s => pintarEstado(s.val())));
+  unsubs.push(onValue(ref(db, "config"), s => {
+    const c = s.val(); if (!c) return;
+    CAMPOS.forEach(k => { if (c[k] !== undefined && document.activeElement.id !== k) $(k).value = c[k]; });
+    if (c.familiares !== undefined && document.activeElement.id !== "familiares") $("familiares").value = c.familiares;
+  }));
+  unsubs.push(onValue(query(ref(db, "eventos"), limitToLast(30)), s => pintarEventos(s)));
+}
+
+function fila(k, v) {
+  const d = document.createElement("div"); d.className = "kv";
+  const b = document.createElement("b"); b.textContent = String(v);
+  const sp = document.createElement("span"); sp.textContent = k;
+  d.append(b, sp); return d;
+}
+
+function aFecha(v) {
+  if (typeof v !== "number") return null;
+  if (v > 1e12) return new Date(v);
+  if (v > 1e9) return new Date(v * 1000);
+  return null;
+}
+
+function pintarEstado(e) {
+  const box = $("estado"); box.replaceChildren();
+  if (!e || typeof e !== "object") { box.append(fila("Estado", "Sin datos")); return; }
+  for (const [k, v] of Object.entries(e)) {
+    const f = aFecha(v);
+    const nombre = { ts:"última actualización", bpm:"BPM", spo2:"SpO₂ %", activa:"manilla activa", alerta:"alerta", telegram:"Telegram conectado", errorSensor:"error de sensor" }[k] || k;
+    box.append(fila(nombre, f ? f.toLocaleString("es") : (typeof v === "boolean" ? (v ? "Sí" : "No") : (typeof v === "object" ? JSON.stringify(v) : v))));
+  }
+}
+
+const CLAVES_FECHA = ["ts","timestamp","t","fecha","tiempo","time"];
+const CLAVES_TIPO  = ["tipo","type","evento","alerta","nombre"];
+const NOMBRES_TIPO = {
+  anomalia_cardiaca: "Posible anomalía cardíaca",
+  caida_leve: "Caída leve",
+  caida_brusca: "Caída brusca",
+  emergencia_manual: "Emergencia manual"
+};
+const ETIQ = { fecha:"fecha", enviada:"enviada", cancelada:"cancelada", confirmada:"confirmada",
+  confirmadoPor:"confirmó", bpm:"BPM", spo2:"SpO₂", picoG:"pico (g)" };
+
+function pintarEventos(snap) {
+  // El ESP32 guarda en /eventos/AAAA-MM-DD/id: se recorre cada día y cada evento
+  const lista = [];
+  snap.forEach(dia => {
+    dia.forEach(h => {
+      const o = h.val();
+      if (!o || typeof o !== "object") return;
+      let fecha = null;
+      for (const k of CLAVES_FECHA) { const f = aFecha(o[k]); if (f) { fecha = f; break; } }
+      lista.push({ key: h.key, o, fecha });
+    });
+  });
+  lista.sort((a, b) => (b.fecha ? b.fecha.getTime() : 0) - (a.fecha ? a.fecha.getTime() : 0));
+  const box = $("eventos"); box.replaceChildren();
+  if (!lista.length) { box.textContent = "Sin eventos todavía"; return; }
+  let dia = null;
+  for (const it of lista) {
+    const etiqueta = it.fecha ? it.fecha.toLocaleDateString("es", { weekday:"long", day:"numeric", month:"long", year:"numeric" }) : "Sin fecha";
+    if (etiqueta !== dia) {
+      dia = etiqueta;
+      const h = document.createElement("div"); h.className = "day"; h.textContent = etiqueta; box.append(h);
+    }
+    const ev = document.createElement("div"); ev.className = "ev";
+    const hora = document.createElement("span"); hora.className = "h";
+    hora.textContent = it.fecha ? it.fecha.toLocaleTimeString("es", { hour:"2-digit", minute:"2-digit", second:"2-digit" }) : "";
+    const tk = CLAVES_TIPO.find(k => it.o[k] !== undefined);
+    const t = document.createElement("span"); t.className = "t"; t.textContent = tk ? (NOMBRES_TIPO[it.o[tk]] || String(it.o[tk])) : it.key;
+    ev.append(hora, t);
+    const resto = Object.entries(it.o).filter(([k]) => k !== tk && !CLAVES_FECHA.includes(k) && !["id","hora"].includes(k))
+      .map(([k, v]) => (ETIQ[k] || k) + ": " + (typeof v === "boolean" ? (v ? "sí" : "no") : (typeof v === "object" ? JSON.stringify(v) : v))).join(" · ");
+    if (resto) { const d = document.createElement("div"); d.className = "d"; d.textContent = resto; ev.append(d); }
+    box.append(ev);
+  }
+}
+
+$("btnGuardar").onclick = async () => {
+  const m = $("cfgMsg"); m.className = "msg"; m.textContent = "";
+  const c = {};
+  for (const k of CAMPOS) c[k] = parseFloat($(k).value);
+  c.familiares = $("familiares").value.trim();
+  if (CAMPOS.some(k => Number.isNaN(c[k]))) { m.className = "msg err"; m.textContent = "Completa todos los números."; return; }
+  if (c.caidaBruscaG <= c.caidaLeveG) { m.className = "msg err"; m.textContent = "La caída brusca debe ser mayor que la leve."; return; }
+  if (c.bpmMax <= c.bpmMin + 9) { m.className = "msg err"; m.textContent = "El BPM máximo debe superar al mínimo por más de 9."; return; }
+  try {
+    await set(ref(db, "config"), c);
+    m.className = "msg okc"; m.textContent = "Guardado.";
+  } catch (e) {
+    m.className = "msg err";
+    m.textContent = "No se pudo guardar. Entra con el usuario de la familia y revisa los rangos permitidos.";
+  }
+};
+</script>
+</body>
+</html>
